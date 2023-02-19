@@ -40,7 +40,7 @@ def addInflow(d_src: wp.array2d(dtype=float),
 
 
 @wp.func
-def sample_float(fluid: wp.array2d(dtype=float), x: float, y: float, ox: float, oy: float):
+def lin_grid_sample(fluid: wp.array2d(dtype=float), x: float, y: float, ox: float, oy: float):
     x_new = min(max(x - ox, 0.0), float(grid_width) - 1.001)
     y_new = min(max(y - oy, 0.0), float(grid_height) - 1.001)
     ix = int(x_new)
@@ -70,15 +70,15 @@ def advect(d_src: wp.array2d(dtype=float),
     x = float(i)
     y = float(j)
 
-    uVel = sample_float(u_src, x, y, 0.0, 0.5)
-    vVel = sample_float(v_src, x, y, 0.5, 0.0)
+    uVel = lin_grid_sample(u_src, x, y, 0.0, 0.5)
+    vVel = lin_grid_sample(v_src, x, y, 0.5, 0.0)
 
     x -= uVel*dt
     y -= vVel*dt
 
-    d_dst[i,j] = sample_float(d_src, x, y, 0.5, 0.5)
-    u_dst[i,j] = sample_float(u_src, x, y, 0.0, 0.5)
-    v_dst[i,j] = sample_float(v_src, x, y, 0.5, 0.0)
+    d_dst[i,j] = lin_grid_sample(d_src, x, y, 0.5, 0.5)
+    u_dst[i,j] = lin_grid_sample(u_src, x, y, 0.0, 0.5)
+    v_dst[i,j] = lin_grid_sample(v_src, x, y, 0.5, 0.0)
 
 
 @wp.kernel
@@ -99,17 +99,17 @@ def project(r: wp.array2d(dtype=float), p_src: wp.array2d(dtype=float), p_dst: w
     offDiag = float(0.0)
 
     if i > 0:
-        diag    += scale
-        offDiag -= scale * at(p_src, i-1, j)
+        diag    = diag + scale
+        offDiag = offDiag - scale * at(p_src, i-1, j)
     if j > 0:
-        diag    += scale
-        offDiag -= scale * at(p_src, i, j-1)
+        diag    = diag + scale
+        offDiag = offDiag - scale * at(p_src, i, j-1)
     if i < grid_width - 1:
-        diag    += scale
-        offDiag -= scale * at(p_src, i+1, j)
+        diag    = diag + scale
+        offDiag = offDiag - scale * at(p_src, i+1, j)
     if j < grid_height - 1:
-        diag    += scale
-        offDiag -= scale * at(p_src, i, j+1)
+        diag    = diag + scale
+        offDiag = offDiag - scale * at(p_src, i, j+1)
 
     newP = (at(r, i, j) - offDiag)/diag
     p_dst[i,j] = newP
@@ -140,8 +140,7 @@ class FluidSolver:
         self.sim_substeps = 1
         self.sim_dt = 0.01
         self.sim_time = 0.0
-        # Set iterations to > 200. 
-        self.iterations = 10
+        self.iterations = 600
 
         self.device = wp.get_device()
 
@@ -175,16 +174,16 @@ class FluidSolver:
 
             for j in range(self.iterations):
                 wp.launch(project, dim=shape, inputs=[self.r, self.p_src, self.p_dst, dt])
-                (self.p_dst, self.p_src) = (self.p_src, self.p_dst)
+                (self.p_src, self.p_dst) = (self.p_dst, self.p_src)
 
             wp.launch(applyPressure, dim=shape, inputs=[self.u_src, self.v_src, self.p_src, dt])
 
             # advect
             wp.launch(advect, dim=shape, inputs=[self.d_src, self.d_dst, self.u_src, self.u_dst, self.v_src, self.v_dst, dt])
 
-            (self.d_dst, self.d_src) = (self.d_src, self.d_dst)
-            (self.u_dst, self.u_src) = (self.u_src, self.u_dst)
-            (self.v_dst, self.v_src) = (self.v_src, self.v_dst)
+            (self.d_src, self.d_dst) = (self.d_dst, self.d_src)
+            (self.u_src, self.u_dst) = (self.u_dst, self.u_src)
+            (self.v_src, self.v_dst) = (self.v_dst, self.v_src)
 
             self.sim_time += dt
 
@@ -195,13 +194,13 @@ class FluidSolver:
 
 if __name__ == '__main__':
 
-    example = FluidSolver()
+    chapter1 = FluidSolver()
 
     fig = plt.figure()
 
-    img = plt.imshow(example.d_src.numpy(), origin="lower", animated=True, interpolation="antialiased")
+    img = plt.imshow(chapter1.d_src.numpy(), origin="lower", animated=True, interpolation="antialiased")
     img.set_norm(matplotlib.colors.Normalize(0.0, 1.0))
-    seq = anim.FuncAnimation(fig, lambda i: example.render(img, i), frames=1000000, blit=True, interval=8, repeat=False)
-    # seq.save('fluid.gif') 
+    seq = anim.FuncAnimation(fig, lambda i: chapter1.render(img, i), frames=10000, blit=True, interval=8, repeat=False)
+    # seq.save('chapter1.gif') 
     
     plt.show()

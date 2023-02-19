@@ -1,3 +1,7 @@
+This is a GPU-accelerated fork using Nvidia's Warp. The code is converted to python and some logical changes are made to run in kernels. The output is displayed using Matplotlib's FuncAnimation rather than as a set of png's. 
+
+The original readme starts from here: 
+
 ![Fluid](https://raw.github.com/tunabrain/incremental-fluids/master/Header.png)
 
 Incremental fluids

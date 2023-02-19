@@ -80,65 +80,63 @@ def cerp(a: float, b: float, c: float, d: float, x: float):
 
 
 @wp.func
-def cubic_grid_sample(fluid: wp.array2d(dtype=float), x: float, y: float, ox: float, oy: float):
-    x_new = min(max(x - ox, 0.0), float(grid_width) - 1.001)
-    y_new = min(max(y - oy, 0.0), float(grid_height) - 1.001)
-    ix = int(x_new)
-    iy = int(y_new)
-    x_new = x_new - float(ix)
-    y_new = y_new - float(iy)
+def cubic_grid_sample(fluid: wp.array2d(dtype=float), x: float, y: float):
+    lx = int(wp.floor(x))
+    ly = int(wp.floor(y))
 
-    x0 = max(ix - 1, 0)
-    x1 = ix
-    x2 = ix + 1
-    x3 = min(ix + 2, grid_width - 1)
+    tx = x-float(lx)
+    ty = y-float(ly)
 
-    y0 = max(iy - 1, 0)
-    y1 = iy
-    y2 = iy + 1
-    y3 = min(iy + 2, grid_height - 1)
+    x0 = max(lx - 1, 0)
+    x1 = lx
+    x2 = lx + 1
+    x3 = min(lx + 2, grid_width - 1)
+
+    y0 = max(ly - 1, 0)
+    y1 = ly
+    y2 = ly + 1
+    y3 = min(ly + 2, grid_height - 1)
     
-    q0 = cerp(at(fluid, x0, y0), at(fluid, x1, y0), at(fluid, x2, y0), at(fluid, x3, y0), x)
-    q1 = cerp(at(fluid, x0, y1), at(fluid, x1, y1), at(fluid, x2, y1), at(fluid, x3, y1), x)
-    q2 = cerp(at(fluid, x0, y2), at(fluid, x1, y2), at(fluid, x2, y2), at(fluid, x3, y2), x)
-    q3 = cerp(at(fluid, x0, y3), at(fluid, x1, y3), at(fluid, x2, y3), at(fluid, x3, y3), x)
+    q0 = cerp(at(fluid, x0, y0), at(fluid, x1, y0), at(fluid, x2, y0), at(fluid, x3, y0), tx)
+    q1 = cerp(at(fluid, x0, y1), at(fluid, x1, y1), at(fluid, x2, y1), at(fluid, x3, y1), tx)
+    q2 = cerp(at(fluid, x0, y2), at(fluid, x1, y2), at(fluid, x2, y2), at(fluid, x3, y2), tx)
+    q3 = cerp(at(fluid, x0, y3), at(fluid, x1, y3), at(fluid, x2, y3), at(fluid, x3, y3), tx)
     
-    return cerp(q0, q1, q2, q3, y)
+    return cerp(q0, q1, q2, q3, ty)
 
 
 @wp.func
-def lin_grid_sample(fluid: wp.array2d(dtype=float), x: float, y: float, ox: float, oy: float):
-    x_new = min(max(x - ox, 0.0), float(grid_width) - 1.001)
-    y_new = min(max(y - oy, 0.0), float(grid_height) - 1.001)
-    ix = int(x_new)
-    iy = int(y_new)
-    x_new = x_new - float(ix)
-    y_new = y_new - float(iy)
+def lin_grid_sample(f: wp.array2d(dtype=float), x: float, y: float):
 
-    x00 = at(fluid, ix + 0, iy + 0)
-    x10 = at(fluid, ix + 1, iy + 0)
-    x01 = at(fluid, ix + 0, iy + 1)
-    x11 = at(fluid, ix + 1, iy + 1)
+    lx = int(wp.floor(x))
+    ly = int(wp.floor(y))
 
-    return wp.lerp(wp.lerp(x00, x10, x_new), wp.lerp(x01, x11, x_new), y_new)
+    tx = x-float(lx)
+    ty = y-float(ly)
+    
+    s0 = wp.lerp(at(f, lx, ly), at(f, lx+1, ly), tx)
+    s1 = wp.lerp(at(f, lx, ly+1), at(f, lx+1, ly+1), tx)
+
+    s = wp.lerp(s0, s1, ty)
+    return s
 
 
 @wp.func
 def rungeKutta3(x: float, y: float, timestep: float, u: wp.array2d(dtype=float), v: wp.array2d(dtype=float)):
-    firstU = lin_grid_sample(u, x, y, 0.0, 0.5)/hx
-    firstV = lin_grid_sample(v, x, y, 0.5, 0.0)/hx
+    firstU = lin_grid_sample(u, x, y)/hx
+    firstV = lin_grid_sample(v, x, y)/hx
 
     midX = x - 0.5*timestep*firstU
     midY = y - 0.5*timestep*firstV
 
-    midU = lin_grid_sample(u, midX, midY, 0.0, 0.5)/hx
-    midV = lin_grid_sample(v, midX, midY, 0.5, 0.0)/hx
+    midU = lin_grid_sample(u, midX, midY)/hx
+    midV = lin_grid_sample(v, midX, midY)/hx
 
     lastX = x - 0.75*timestep*midU
     lastY = y - 0.75*timestep*midV
 
-    lastU = lin_grid_sample(u, lastX, lastY, 0.0, 0.5)
-    lastV = lin_grid_sample(v, lastX, lastY, 0.5, 0.0)
+    lastU = lin_grid_sample(u, lastX, lastY)
+    lastV = lin_grid_sample(v, lastX, lastY)
 
     x = x - (timestep*((2.0/9.0)*firstU + (3.0/9.0)*midU + (4.0/9.0)*lastU))
     y = y - (timestep*((2.0/9.0)*firstV + (3.0/9.0)*midV + (4.0/9.0)*lastV))
@@ -167,9 +165,9 @@ def advect(d_src: wp.array2d(dtype=float),
     x = _[0]
     y = _[1]
 
-    d_dst[i, j] = cubic_grid_sample(d_src, x, y, 0.5, 0.5)
-    u_dst[i, j] = cubic_grid_sample(u_src, x, y, 0.0, 0.5)
-    v_dst[i, j] = cubic_grid_sample(v_src, x, y, 0.5, 0.0)
+    d_dst[i, j] = cubic_grid_sample(d_src, x, y)
+    u_dst[i, j] = cubic_grid_sample(u_src, x, y)
+    v_dst[i, j] = cubic_grid_sample(v_src, x, y)
 
 
 @wp.kernel
@@ -229,7 +227,7 @@ class FluidSolver:
     def __init__(self):
 
         self.sim_substeps = 1
-        self.sim_dt = 0.01
+        self.sim_dt = 0.05
         self.sim_time = 0.0
         self.iterations = 600
 

@@ -40,20 +40,19 @@ def addInflow(d_src: wp.array2d(dtype=float),
 
 
 @wp.func
-def lin_grid_sample(fluid: wp.array2d(dtype=float), x: float, y: float, ox: float, oy: float):
-    x_new = min(max(x - ox, 0.0), float(grid_width) - 1.001)
-    y_new = min(max(y - oy, 0.0), float(grid_height) - 1.001)
-    ix = int(x_new)
-    iy = int(y_new)
-    x_new = x_new - float(ix)
-    y_new = y_new - float(iy)
+def lin_grid_sample(f: wp.array2d(dtype=float), x: float, y: float):
+
+    lx = int(wp.floor(x))
+    ly = int(wp.floor(y))
+
+    tx = x-float(lx)
+    ty = y-float(ly)
     
-    x00 = at(fluid, ix + 0, iy + 0)
-    x10 = at(fluid, ix + 1, iy + 0)
-    x01 = at(fluid, ix + 0, iy + 1)
-    x11 = at(fluid, ix + 1, iy + 1)
-    
-    return wp.lerp(wp.lerp(x00, x10, x_new), wp.lerp(x01, x11, x_new), y_new)
+    s0 = wp.lerp(at(f, lx, ly), at(f, lx+1, ly), tx)
+    s1 = wp.lerp(at(f, lx, ly+1), at(f, lx+1, ly+1), tx)
+
+    s = wp.lerp(s0, s1, ty)
+    return s
 
 
 @wp.kernel
@@ -63,22 +62,22 @@ def advect(d_src: wp.array2d(dtype=float),
            u_dst: wp.array2d(dtype=float),
            v_src: wp.array2d(dtype=float),
            v_dst: wp.array2d(dtype=float),
-           dt: float):
+           timestep: float):
 
     i,j = wp.tid()
     
     x = float(i)
     y = float(j)
 
-    uVel = lin_grid_sample(u_src, x, y, 0.0, 0.5)
-    vVel = lin_grid_sample(v_src, x, y, 0.5, 0.0)
+    uVel = lin_grid_sample(u_src, x, y)
+    vVel = lin_grid_sample(v_src, x, y)
 
-    x -= uVel*dt
-    y -= vVel*dt
+    x = x - uVel*timestep
+    y = y - vVel*timestep
 
-    d_dst[i,j] = lin_grid_sample(d_src, x, y, 0.5, 0.5)
-    u_dst[i,j] = lin_grid_sample(u_src, x, y, 0.0, 0.5)
-    v_dst[i,j] = lin_grid_sample(v_src, x, y, 0.5, 0.0)
+    d_dst[i,j] = lin_grid_sample(d_src, x, y)
+    u_dst[i,j] = lin_grid_sample(u_src, x, y)
+    v_dst[i,j] = lin_grid_sample(v_src, x, y)
 
 
 @wp.kernel
@@ -110,7 +109,7 @@ def project(r: wp.array2d(dtype=float), p_src: wp.array2d(dtype=float), p_dst: w
     if j < grid_height - 1:
         diag    = diag + scale
         offDiag = offDiag - scale * at(p_src, i, j+1)
-
+        
     newP = (at(r, i, j) - offDiag)/diag
     p_dst[i,j] = newP
 
@@ -121,10 +120,10 @@ def applyPressure(u: wp.array2d(dtype=float), v: wp.array2d(dtype=float), p: wp.
     scale = timestep / (density * hx)
     i,j = wp.tid()
 
-    u[i,j] = u[i,j] - scale*p[i,j]
-    u[(i+1),j] = u[(i+1),j] + scale*p[i,j]
-    v[i,j] = v[i,j] - scale*p[i,j]
-    v[i,(j+1)] = v[i,(j+1)] + scale*p[i,j]
+    u[i,    j]    = u[i,    j]    - scale*p[i,j]
+    u[(i+1),j]    = u[(i+1),j]    + scale*p[i,j]
+    v[i,    j]    = v[i,    j]    - scale*p[i,j]
+    v[i,   (j+1)] = v[i,   (j+1)] + scale*p[i,j]
 
 
     if i == 0 or i == grid_width:
@@ -138,7 +137,7 @@ class FluidSolver:
     def __init__(self):
 
         self.sim_substeps = 1
-        self.sim_dt = 0.01
+        self.sim_dt = 0.05
         self.sim_time = 0.0
         self.iterations = 600
 

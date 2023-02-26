@@ -8,7 +8,7 @@ wp.init()
 
 grid_width = wp.constant(400)
 grid_height = wp.constant(400)
-density = wp.constant(0.01)
+density = wp.constant(1.0)
 hx = wp.constant(1.0/min(grid_width.val, grid_height.val))
 
 
@@ -65,11 +65,11 @@ def addInflow(d_src: wp.array2d(dtype=float),
 
         vi = cubicPulse(l)
  
-        if d_src[i, j] < d:
+        if d_src[i, j] < vi * d:
             d_src[i, j]  = vi * d
-        if u_src[i, j] < u:
+        if u_src[i, j] < vi * u:
             u_src[i, j]  = vi * u
-        if v_src[i, j] < v:
+        if v_src[i, j] < vi * v:
             v_src[i, j]  = vi * v
 
 
@@ -242,7 +242,7 @@ class FluidSolver:
         self.sim_substeps = 4
         self.sim_dt = 0.05
         self.sim_time = 0.0
-        self.iterations = 600
+        self.iterations = 400
 
         self.device = wp.get_device()
 
@@ -297,9 +297,6 @@ class FluidSolver:
             shape = (grid_width.val, grid_height.val)
             dt = self.sim_dt
 
-            # update emitters
-            wp.launch(addInflow, dim=shape, inputs=[self.d.src, self.u.src, self.v.src, 1.0, 0.0, 3.0])
-
             wp.launch(buildRhs, dim=shape, inputs=[self.r, self.u.src, self.v.src])
 
             if self.device.is_cuda:
@@ -318,6 +315,14 @@ class FluidSolver:
             (self.d.src, self.d.dst) = (self.d.dst, self.d.src)
             (self.u.src, self.u.dst) = (self.u.dst, self.u.src)
             (self.v.src, self.v.dst) = (self.v.dst, self.v.src)
+
+            if self.device.is_cuda:
+                wp.capture_launch(self.graph)
+            else:
+                self.solve()  
+
+            # update emitters
+            wp.launch(addInflow, dim=shape, inputs=[self.d.src, self.u.src, self.v.src, density.val, 5.0, 5.0])
 
             self.sim_time += dt
 
